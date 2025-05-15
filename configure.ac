@@ -31,5 +31,5 @@ AC_LANG([C])
 AC_DEFINE([_POSIX_C_SOURCE], [200809L], [Define the POSIX version])
 
 # Final tasks
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile])
 AC_OUTPUT

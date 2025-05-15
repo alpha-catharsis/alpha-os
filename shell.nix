@@ -9,6 +9,7 @@ pkgs.mkShell {
     pkgs.autoconf
     pkgs.gcc
     pkgs.gdb
+    pkgs.glibc.static
     pkgs.libtool
 
     # keep this line if you use bash
