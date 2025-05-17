@@ -10,4 +10,4 @@ from alpha_lib.Bootstrap import *
 if __name__ == '__main__':
     print()
     t = BootstrapAlphaOSTask()
-    execute(t, os.environ)
+    execute(t)

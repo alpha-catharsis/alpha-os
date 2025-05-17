@@ -1,3 +1,5 @@
+import os.path
+
 from alpha_lib.Output import *
 from alpha_lib.Task import *
 
@@ -18,8 +20,8 @@ class ChainTask(Task):
         else:
             return self.epilogue
 
-    def _run(self, env):
-        return (True, None, env)
+    def _run(self):
+        return (True, None)
 
 class DisplayEnvironmentTask(Task):
     def __init__(self):
@@ -31,19 +33,19 @@ class DisplayEnvironmentTask(Task):
     def end_message(self):
         return OutputEntry() << yellow_text('End of environment variables')
 
-    def _run(self, env):
+    def _run(self):
         for key in env.keys():
             self >> DisplayEnvironmentVariableTask(key)
-        return (True, None, env)
+        return (True, None)
 
 class DisplayEnvironmentVariableTask(Task):
     def __init__(self, name):
         super().__init__('DisplayEnvironmentVariable')
         self.name = name
 
-    def _run(self, env):
-        out = OutputEntry() << cyan_text(self.name) << " = " << magenta_text(env[self.name])
-        return (True, out, env)
+    def _run(self):
+        out = OutputEntry() << cyan_text(self.name) << " = " << magenta_text(os.environ[self.name])
+        return (True, out)
 
 class SetEnvironmentVariableTask(Task):
     def __init__(self, name, value):
@@ -51,26 +53,24 @@ class SetEnvironmentVariableTask(Task):
         self.name = name
         self.value = value
 
-    def _run(self, env):
-        newenv = env.copy()
-        newenv[self.name] = self.value
+    def _run(self):
+        os.environ[self.name] = os.path.expandvars(self.value)
         out = OutputEntry() << "Set environmental variable " << cyan_text(self.name) << " to " << magenta_text(self.value)
-        return (True, out, newenv)
+        return (True, out)
 
 class DeleteEnvironmentVariableTask(Task):
     def __init__(self, name):
         super().__init__('DeleteEnvironmentVariable')
         self.name = name
 
-    def _run(self, env):
-        if self.name in env:
-            newenv = env.copy()
-            del newenv[self.name]
+    def _run(self):
+        if self.name in os.environ:
+            del os.environ[self.name]
             out = OutputEntry() << "Deleted environmental variable " << cyan_text(self.name)
-            return (True, out, newenv)
+            return (True, out)
         else:
             out = OutputEntry() << red_text("Failed to delete unexisting environmental variable ") << cyan_text(self.name)
-            return (False, out, env)
+            return (False, out)
 
 class CreateDirectoryTask(Task):
     def __init__(self, dirpath, must_not_exist):
@@ -78,47 +78,48 @@ class CreateDirectoryTask(Task):
         self.dirpath = dirpath
         self.must_not_exist = must_not_exist
 
-    def _run(self, env):
-        (exist, _, _) = run_shell_cmd(f'test -d {self.dirpath}', env)
+    def _run(self):
+        (exist, _, _) = run_shell_cmd(f'test -d {self.dirpath}')
         if exist and self.must_not_exist:
             out = OutputEntry() << red_text("Attempted to create the already existing directory ") << cyan_text(self.dirpath)
-            return (False, out, env)
+            return (False, out)
         else:
             if not exist:
-                (success, _, err) = run_shell_cmd(f'mkdir {self.dirpath}', env)
+                (success, _, err) = run_shell_cmd(f'mkdir {self.dirpath}')
                 if not success:
                     out = (OutputEntry() << red_text("Failed to create directory ") << cyan_text(self.dirpath) <<
                            red_text(', reason: ') << newline() << yellow_text(err.decode('utf-8')))
-                    return (False, out, env)
+                    return (False, out)
             out = OutputEntry() << "Created directory " << cyan_text(self.dirpath)
             if exist:
                 out << yellow_text(' (skipped)')
-            return (True, out, env)
+            return (True, out)
 
 class DeleteDirectoryTask(Task):
     def __init__(self, dirpath):
         super().__init__('DeleteDirectory')
         self.dirpath = dirpath
 
-    def _run(self, env):
-        (success, _, err) = run_shell_cmd(f'rmdir {self.dirpath}', env)
+    def _run(self):
+        (success, _, err) = run_shell_cmd(f'rmdir {self.dirpath}')
         if not success:
             out = (OutputEntry() << red_text("Failed to delete directory ") << cyan_text(self.dirpath) <<
                    red_text(', reason: ') << newline() << yellow_text(err.decode('utf-8')))
-            return (False, out, env)
+            return (False, out)
         out = OutputEntry() << "Deleted directory " << cyan_text(self.dirpath)
-        return (True, out, env)
+        return (True, out)
 
 class RecursiveDeleteDirectoryTask(Task):
     def __init__(self, dirpath):
         super().__init__('RecursiveDeleteDirectory')
         self.dirpath = dirpath
 
-    def _run(self, env):
-        (success, _, err) = run_shell_cmd(f'rm -r {self.dirpath}', env)
+    def _run(self):
+        (success, _, err) = run_shell_cmd(f'rm -r {self.dirpath}')
         if not success:
             out = (OutputEntry() << red_text("Failed to recursively delete directory ") << cyan_text(self.dirpath) <<
                    red_text(', reason: ') << newline() << yellow_text(err.decode('utf-8')))
-            return (False, out, env)
+            return (False, out)
         out = OutputEntry() << "Recursively deleted directory " << cyan_text(self.dirpath)
-        return (True, out, env)
+        return (True, out)
+

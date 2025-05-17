@@ -1,3 +1,4 @@
+import os.path
 import subprocess
 
 from alpha_lib.Output import *
@@ -14,7 +15,7 @@ class BootstrapAlphaOSTask(ChainTask):
                          [SetEnvironmentVariableTask('ALPHA_OS_ROOT', '/home/alpha/alpha-os'),
                           CreateDirectoryTask('$ALPHA_OS_ROOT', False),
                           ImplementFHSTask(),
-                          SetEnvironmentVariableTask('ALPHA_BOOTSTRAP', '/home/alpha/alpha-os/bootstrap'),
+                          SetEnvironmentVariableTask('ALPHA_BOOTSTRAP', '$ALPHA_OS_ROOT/bootstrap'),
                           CreateDirectoryTask('$ALPHA_BOOTSTRAP', False)])
 
 
