@@ -26,6 +26,9 @@ class Task:
     def successful(self):
         return self.state == TaskState.SUCCESSFUL
 
+    def failed(self):
+        return self.state == TaskState.FAILED
+
     def __rshift__(self, other):
         if isinstance(other, Task):
             other.parent = self
@@ -55,12 +58,12 @@ def execute(task, env, level=0, max_col=80):
 
     if task.successful():
         for child in task.children:
-            execute(child, newenv, level + 1, max_col)
-            if not child.successful:
+            newenv = execute(child, newenv, level + 1, max_col)
+            if child.failed():
                 break
 
     end_message = task.end_message()
     if end_message is not None:
         end_message.display(level, max_col)
 
-    return task.successful()
+    return newenv
