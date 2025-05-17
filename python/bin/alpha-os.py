@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 
+import os
+
 from alpha_lib.Output import *
+from alpha_lib.Task import *
+from alpha_lib.BasicTasks import *
+
 
 if __name__ == '__main__':
-    entry1 = OutputEntry()
-    entry1 << yellow_text("1245")
-    entry1.display(1, 80)
+    t = DisplayEnvironmentTask()
+    execute(t, os.environ)
