@@ -139,6 +139,22 @@ class ChangeCurrentDirectoryTask(Task):
                    newline() << red_text('Reason: ') << newline() << yellow_text(e))
             return (False, out)
 
+class MoveFileTask(Task):
+    def __init__(self, curpath, newpath):
+        super().__init__('MoveFile')
+        self.curpath = curpath
+        self.newpath = newpath
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd(f'mv {self.curpath} {self.newpath}')
+        if not success:
+            out = (OutputEntry() << red_text("Failed to move file ") << cyan_text(self.curpath) <<
+                   red_text(' to ') << cyan_text(self.curpath) <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        out = OutputEntry() << "Moved file " << cyan_text(self.curpath) << ' to ' << cyan_text(self.newpath)
+        return (True, out)
+
 class DownloadFileTask(Task):
     def __init__(self, url, filename):
         super().__init__('DownloadFile')
