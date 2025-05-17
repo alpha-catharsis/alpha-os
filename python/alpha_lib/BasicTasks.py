@@ -1,5 +1,3 @@
-import subprocess
-
 from alpha_lib.Output import *
 from alpha_lib.Task import *
 
@@ -81,19 +79,14 @@ class CreateDirectoryTask(Task):
         self.must_not_exist = must_not_exist
 
     def _run(self, env):
-        exist_check = subprocess.Popen(f'test -d {self.dirpath}', shell=True, env=env)
-        exist_check.communicate()
-        exist = exist_check.returncode == 0
+        (exist, _, _) = run_shell_cmd(f'test -d {self.dirpath}', env)
         if exist and self.must_not_exist:
             out = OutputEntry() << red_text("Attempted to create the already existing directory ") << cyan_text(self.dirpath)
             return (False, out, env)
         else:
             if not exist:
-                create_dir = subprocess.Popen(f'mkdir {self.dirpath}', shell=True, env=env, stdout=subprocess.PIPE,
-                                              stderr=subprocess.PIPE)
-                (_, err) = create_dir.communicate()
-                failed = create_dir.returncode != 0
-                if failed:
+                (success, _, err) = run_shell_cmd(f'mkdir {self.dirpath}', env)
+                if not success:
                     out = (OutputEntry() << red_text("Failed to create directory ") << cyan_text(self.dirpath) <<
                            red_text(', reason: ') << newline() << yellow_text(err.decode('utf-8')))
                     return (False, out, env)
@@ -101,3 +94,31 @@ class CreateDirectoryTask(Task):
             if exist:
                 out << yellow_text(' (skipped)')
             return (True, out, env)
+
+class DeleteDirectoryTask(Task):
+    def __init__(self, dirpath):
+        super().__init__('DeleteDirectory')
+        self.dirpath = dirpath
+
+    def _run(self, env):
+        (success, _, err) = run_shell_cmd(f'rmdir {self.dirpath}', env)
+        if not success:
+            out = (OutputEntry() << red_text("Failed to delete directory ") << cyan_text(self.dirpath) <<
+                   red_text(', reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out, env)
+        out = OutputEntry() << "Deleted directory " << cyan_text(self.dirpath)
+        return (True, out, env)
+
+class RecursiveDeleteDirectoryTask(Task):
+    def __init__(self, dirpath):
+        super().__init__('RecursiveDeleteDirectory')
+        self.dirpath = dirpath
+
+    def _run(self, env):
+        (success, _, err) = run_shell_cmd(f'rm -r {self.dirpath}', env)
+        if not success:
+            out = (OutputEntry() << red_text("Failed to recursively delete directory ") << cyan_text(self.dirpath) <<
+                   red_text(', reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out, env)
+        out = OutputEntry() << "Recursively deleted directory " << cyan_text(self.dirpath)
+        return (True, out, env)

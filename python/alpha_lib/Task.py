@@ -1,4 +1,5 @@
 import enum
+import subprocess
 
 class TaskState(enum.Enum):
     CREATED = 0
@@ -67,3 +68,8 @@ def execute(task, env, level=0, max_col=80):
         end_message.display(level, max_col)
 
     return newenv
+
+def run_shell_cmd(cmd, env):
+    proc = subprocess.Popen(cmd, shell=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    (out, err) = proc.communicate()
+    return (proc.returncode == 0, out, err)
