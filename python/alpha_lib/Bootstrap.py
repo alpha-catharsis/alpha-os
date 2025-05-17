@@ -15,9 +15,12 @@ class BootstrapAlphaOSTask(ChainTask):
                          [SetEnvironmentVariableTask('ALPHA_OS_ROOT', '/home/alpha/alpha-os'),
                           CreateDirectoryTask('$ALPHA_OS_ROOT', False),
                           ImplementFHSTask(),
+                          SetEnvironmentVariableTask('ALPHA_TOOLS', '$ALPHA_OS_ROOT/tools'),
+                          CreateDirectoryTask('$ALPHA_TOOLS', False),
                           SetEnvironmentVariableTask('ALPHA_BOOTSTRAP', '$ALPHA_OS_ROOT/bootstrap'),
-                          CreateDirectoryTask('$ALPHA_BOOTSTRAP', False)])
-
+                          CreateDirectoryTask('$ALPHA_BOOTSTRAP', False),
+                          ChangeCurrentDirectoryTask('$ALPHA_BOOTSTRAP'),
+                          InstallBinutilsPhase1Task()])
 
 class ImplementFHSTask(ChainTask):
     def __init__(self):
@@ -67,3 +70,30 @@ class ImplementFHSTask(ChainTask):
                           CreateDirectoryTask('$ALPHA_OS_ROOT/var/run', False),
                           CreateDirectoryTask('$ALPHA_OS_ROOT/var/spool', False),
                           CreateDirectoryTask('$ALPHA_OS_ROOT/var/tmp', False)])
+
+class InstallBinutilsPhase1Task(ChainTask):
+    def __init__(self):
+        binutils_elem = yellow_text('binutils (phase 1)')
+        binutils_url = 'https://sourceware.org/pub/binutils/releases/binutils-2.44.tar.xz'
+        binutils_filename = 'binutils-2.44.tar.xz'
+        binutils_dir = 'binutils-2.44'
+        super().__init__('BootstrapAlphaOS',
+                         OutputEntry() << 'Installing ' << binutils_elem,
+                         OutputEntry() << 'Finished installing ' << binutils_elem,
+                         OutputEntry() << red_text('Failed installing ') << binutils_elem,
+                         [DownloadFileTask(binutils_url, binutils_filename),
+                          UnpackArchiveTask(binutils_filename),
+                          ChangeCurrentDirectoryTask(binutils_dir),
+                          CreateDirectoryTask('build', False),
+                          ChangeCurrentDirectoryTask('build'),
+                          ConfigurePackageTask(['--prefix=$ALPHA_TOOLS',
+                                                '--with-sysroot=$ALPHA_OS_ROOT',
+                                                '--target=x86_64-pc-linux',
+                                                '--disable-nls',
+                                                '--enable-gprofng=no',
+                                                '--disable-werror',
+                                                '--enable-new-dtags',
+                                                '--enable-default-hash-style=gnu']),
+                          CompilePackageTask(),
+                          InstallPackageTask()
+                          ])

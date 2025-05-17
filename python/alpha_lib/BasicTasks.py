@@ -1,4 +1,5 @@
 import os.path
+import urllib.request
 
 from alpha_lib.Output import *
 from alpha_lib.Task import *
@@ -88,7 +89,7 @@ class CreateDirectoryTask(Task):
                 (success, _, err) = run_shell_cmd(f'mkdir {self.dirpath}')
                 if not success:
                     out = (OutputEntry() << red_text("Failed to create directory ") << cyan_text(self.dirpath) <<
-                           red_text(', reason: ') << newline() << yellow_text(err.decode('utf-8')))
+                           newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
                     return (False, out)
             out = OutputEntry() << "Created directory " << cyan_text(self.dirpath)
             if exist:
@@ -104,7 +105,7 @@ class DeleteDirectoryTask(Task):
         (success, _, err) = run_shell_cmd(f'rmdir {self.dirpath}')
         if not success:
             out = (OutputEntry() << red_text("Failed to delete directory ") << cyan_text(self.dirpath) <<
-                   red_text(', reason: ') << newline() << yellow_text(err.decode('utf-8')))
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
             return (False, out)
         out = OutputEntry() << "Deleted directory " << cyan_text(self.dirpath)
         return (True, out)
@@ -118,8 +119,166 @@ class RecursiveDeleteDirectoryTask(Task):
         (success, _, err) = run_shell_cmd(f'rm -r {self.dirpath}')
         if not success:
             out = (OutputEntry() << red_text("Failed to recursively delete directory ") << cyan_text(self.dirpath) <<
-                   red_text(', reason: ') << newline() << yellow_text(err.decode('utf-8')))
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
             return (False, out)
         out = OutputEntry() << "Recursively deleted directory " << cyan_text(self.dirpath)
         return (True, out)
 
+class ChangeCurrentDirectoryTask(Task):
+    def __init__(self, dirpath):
+        super().__init__('ChangeCurrentDirectory')
+        self.dirpath = dirpath
+
+    def _run(self):
+        try:
+            os.chdir(os.path.expandvars(self.dirpath))
+            out = OutputEntry() << "Changed current directory to " << cyan_text(self.dirpath)
+            return (True, out)
+        except Exception as e:
+            out = (OutputEntry() << red_text("Failed to change current directory to ") << cyan_text(self.dirpath) <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(e))
+            return (False, out)
+
+class DownloadFileTask(Task):
+    def __init__(self, url, filename):
+        super().__init__('DownloadFile')
+        self.url = url
+        self.filename = filename
+        self.exist = None
+
+    def start_message(self):
+        (self.exist, _, _) = run_shell_cmd(f'test -f {self.filename}')
+        out = (OutputEntry() << "Downloading " << cyan_text(self.filename) <<
+               ' from URL ' << cyan_text(self.url))
+        if self.exist:
+            out << yellow_text(' (skipped)')
+        return out
+
+    def end_message(self):
+        if not self.exist and self.successful():
+            return OutputEntry() << "Completed download of " << cyan_text(self.filename)
+        return None
+
+    def _run(self):
+        if not self.exist:
+            try:
+                urllib.request.urlretrieve(self.url, self.filename)
+                return (True, None)
+            except Exception as e:
+                out = (OutputEntry() << red_text("Failed to download ") << cyan_text(self.filename) <<
+                       red_text(' from URL ') << cyan_text(self.url) << newline() << red_text('Reason: ') <<
+                       newline() << yellow_text(e))
+                return (False, out)
+        return (True, None)
+
+class UnpackArchiveTask(Task):
+    def __init__(self, filepath):
+        super().__init__('UnpackArchive')
+        self.filepath = filepath
+        self.ext = None
+        self.comp_flag = None
+        self.dirpath = None
+        self.exist = None
+
+    def start_message(self):
+        (_, self.ext) = os.path.splitext(self.filepath)
+        if self.ext == '.gz':
+            self.comp_flag = 'z'
+            self.dirpath = self.filepath[:-7]
+        elif self.ext == '.bz2':
+            self.comp_flag = 'j'
+            self.dirpath = self.filepath[:-8]
+        elif self.ext == '.tar':
+            self.comp_flag = ''
+            self.dirpath = self.filepath[:-4]
+        elif self.ext == '.xz':
+            self.comp_flag = ''
+            self.dirpath = self.filepath[:-7]
+        out = OutputEntry() << "Extracting archive " << cyan_text(self.filepath)
+        if self.dirpath is not None:
+            (self.exist, _, _) = run_shell_cmd(f'test -d {self.dirpath}')
+            if self.exist:
+                out << yellow_text(' (skipped)')
+        return out
+
+    def end_message(self):
+        if self.successful():
+            return OutputEntry() << "Completed the extraction of the archive " << cyan_text(self.filepath)
+        return None
+
+    def _run(self):
+        if self.comp_flag is None:
+            out = OutputEntry() << red_text("Invalid archive extension ") << cyan_text(self.filepath)
+            return (False, out)
+        else:
+            if self.exist:
+                return (True, None)
+            else:
+                (success, _, err) = run_shell_cmd(f'tar -x{self.comp_flag}f {self.filepath}')
+                if not success:
+                    out = (OutputEntry() << red_text("Failed to extract archive ") << cyan_text(self.filepath) <<
+                           newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+                    return (False, out)
+                return (True, None)
+
+class ConfigurePackageTask(Task):
+    def __init__(self, flags):
+        super().__init__('ConfigurePackage')
+        self.flags = flags
+
+    def start_message(self):
+        return OutputEntry() << 'Configuring package'
+
+    def end_message(self):
+        if self.successful():
+            return OutputEntry() << 'Completed package configuration'
+        return None
+
+    def _run(self):
+        config_cmd = '../configure ' + ' '.join(self.flags)
+        (success, _, err) = run_shell_cmd(config_cmd)
+        if not success:
+            out = (OutputEntry() << red_text("Failed to configure package ") <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        return (True, None)
+
+class CompilePackageTask(Task):
+    def __init__(self):
+        super().__init__('CompilePackage')
+
+    def start_message(self):
+        return OutputEntry() << 'Compiling package'
+
+    def end_message(self):
+        if self.successful():
+            return OutputEntry() << 'Completed package compilation'
+        return None
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd('make')
+        if not success:
+            out = (OutputEntry() << red_text("Failed to compile package ") <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        return (True, None)
+
+class InstallPackageTask(Task):
+    def __init__(self):
+        super().__init__('InstallPackage')
+
+    def start_message(self):
+        return OutputEntry() << 'Installing package'
+
+    def end_message(self):
+        if self.successful():
+            return OutputEntry() << 'Completed package installation'
+        return None
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd('make install')
+        if not success:
+            out = (OutputEntry() << red_text("Failed to install package ") <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        return (True, None)
