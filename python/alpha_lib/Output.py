@@ -47,7 +47,7 @@ class OutputColor(enum.Enum):
     BLUE = 94
     MAGENTA = 95
     CYAN = 96
-    WHITE = 37 # non-bright white
+    WHITE = 97
 
 
 class TextElem(OutputElem):
