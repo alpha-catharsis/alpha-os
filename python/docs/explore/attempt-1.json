@@ -1,0 +1,67 @@
+
+
+
+
+{
+    "module_name": "Prelude",
+    "task_recipes": [
+        {
+            "task_name": "remove-file"
+            "task_options": [
+                "force",
+                "recursive"
+            ],
+            "task_steps": [
+                {
+                    "run-task": "@create-var",
+                    "params": {
+                        "var_name": "shell_cmd",
+                        "var_type": "string"
+                        "var_value": "rm -"
+                    }
+                },
+                {
+                    "run-task": "@cond"
+                    "params": {
+                        "conditions": [
+                            {
+                                "check": {
+                                    "value_type": "param"
+                                    "param_name": "force"
+                                }
+                                "true_branch": {
+                                    "run-task": "@concat-str_var",
+                                    "params": {
+                                        "var_name": "shell_cmd",
+                                        "append_str": "f"
+                                    }
+                                }
+                            },
+                            {
+                                "check": {
+                                    "value_type": "param"
+                                    "param_name": "recursive"
+                                }
+                                "true_branch": {
+                                    "run-task": "@concat-str_var",
+                                    "params": {
+                                        "var_name": "shell_cmd",
+                                        "append_str": "r"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "run-task": "@concat-str_var",
+                    "params": {
+                        "var_name": "shell_cmd",
+                        "append_str": "r"
+                    }
+
+
+            ]
+        }
+    ]
+}

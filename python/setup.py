@@ -7,7 +7,7 @@ setup(
     author='Alpha Catharsis',
     author_email='alpha.catharsis@gmail.com',
     description='Homemade linux distribution',
-    packages=['alpha_lib'],
+    packages=['alpha_lib', 'alpha_lib.lang'],
     install_requires=[],
     scripts = ['bin/alpha-os.py']
 )

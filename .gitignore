@@ -16,5 +16,7 @@ missing
 c/src/config.h.in
 c/src/Makefile.in
 python/alpha_lib/__pycache__
+python/alpha_lib/lang/__pycache__
+python/alpha_lib_old/__pycache__
 python/alpha_os.egg-info
 python/.venv
