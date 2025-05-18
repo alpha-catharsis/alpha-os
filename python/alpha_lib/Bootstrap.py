@@ -12,7 +12,8 @@ class BootstrapAlphaOSTask(ChainTask):
                          OutputEntry() << 'Boostrapping ' << alpha_os_elem,
                          OutputEntry() << 'Finished boostrapping ' << alpha_os_elem,
                          OutputEntry() << red_text('Error boostrapping ') << alpha_os_elem,
-                         [SetEnvironmentVariableTask('ALPHA_OS_ROOT', '/home/alpha/alpha-os'),
+                         [SetEnvironmentVariableTask('ALPHA_OS_ROOT', '/tmp/alpha-os'),
+                          SetUmaskTask(0o022),
                           CreateDirectoryTask('$ALPHA_OS_ROOT', False),
                           ImplementFHSTask(),
                           SetEnvironmentVariableTask('ALPHA_TOOLS', '$ALPHA_OS_ROOT/tools'),
@@ -20,8 +21,15 @@ class BootstrapAlphaOSTask(ChainTask):
                           SetEnvironmentVariableTask('ALPHA_BOOTSTRAP', '$ALPHA_OS_ROOT/bootstrap'),
                           CreateDirectoryTask('$ALPHA_BOOTSTRAP', False),
                           ChangeCurrentDirectoryTask('$ALPHA_BOOTSTRAP'),
-                          # InstallBinutilsPass1Task()
-                          InstallGccPass1Task()
+                          SetEnvironmentVariableTask('ALPHA_OS_TARGET', 'x86_64-alphaos-linux-gnu'),
+                          SetEnvironmentVariableTask('LC_ALL', 'POSIX'),
+                          SetEnvironmentVariableTask('PATH', '$ALPHA_OS_ROOT/tools/bin:$PATH'),
+                          SetEnvironmentVariableTask('CONFIG_SITE', '$ALPHA_OS_ROOT/usr/share/config.site'),
+                          InstallBinutilsPass1Task(),
+                          InstallGccPass1Task(),
+                          InstallAPIHeadersTask(),
+                          InstallGlibcTask(),
+                          InstallLibstdcppTask(),
                           ])
 
 class ImplementFHSTask(ChainTask):
@@ -38,6 +46,7 @@ class ImplementFHSTask(ChainTask):
                           CreateDirectoryTask('$ALPHA_OS_ROOT/etc/opt', False),
                           CreateDirectoryTask('$ALPHA_OS_ROOT/home', False),
                           CreateDirectoryTask('$ALPHA_OS_ROOT/lib', False),
+                          CreateDirectoryTask('$ALPHA_OS_ROOT/lib64', False),
                           CreateDirectoryTask('$ALPHA_OS_ROOT/media', False),
                           CreateDirectoryTask('$ALPHA_OS_ROOT/mnt', False),
                           CreateDirectoryTask('$ALPHA_OS_ROOT/opt', False),
@@ -79,7 +88,7 @@ class InstallBinutilsPass1Task(ChainTask):
         binutils_url = 'https://sourceware.org/pub/binutils/releases/binutils-2.44.tar.xz'
         binutils_filename = 'binutils-2.44.tar.xz'
         binutils_dir = 'binutils-2.44'
-        super().__init__('BootstrapAlphaOS',
+        super().__init__('InstallBinutils',
                          OutputEntry() << 'Installing ' << binutils_elem,
                          OutputEntry() << 'Finished installing ' << binutils_elem,
                          OutputEntry() << red_text('Failed installing ') << binutils_elem,
@@ -90,7 +99,7 @@ class InstallBinutilsPass1Task(ChainTask):
                           ChangeCurrentDirectoryTask('build'),
                           ConfigurePackageTask(['--prefix=$ALPHA_TOOLS',
                                                 '--with-sysroot=$ALPHA_OS_ROOT',
-                                                '--target=x86_64-pc-linux',
+                                                '--target=$ALPHA_OS_TARGET',
                                                 '--disable-nls',
                                                 '--enable-gprofng=no',
                                                 '--disable-werror',
@@ -116,7 +125,7 @@ class InstallGccPass1Task(ChainTask):
         mpc_url = 'https://ftp.gnu.org/gnu/mpc/mpc-1.3.1.tar.gz'
         mpc_filename = 'mpc-1.3.1.tar.gz'
         mpc_dir = 'mpc-1.3.1'
-        super().__init__('BootstrapAlphaOS',
+        super().__init__('InstallGccPass1',
                          OutputEntry() << 'Installing ' << gcc_elem,
                          OutputEntry() << 'Finished installing ' << gcc_elem,
                          OutputEntry() << red_text('Failed installing ') << gcc_elem,
@@ -132,17 +141,156 @@ class InstallGccPass1Task(ChainTask):
                           DownloadFileTask(mpc_url, mpc_filename),
                           UnpackArchiveTask(mpc_filename),
                           MoveFileTask(mpc_dir, 'mpc'),
-                          # CreateDirectoryTask('build', False),
-                          # ChangeCurrentDirectoryTask('build'),
-                          # ConfigurePackageTask(['--prefix=$ALPHA_TOOLS',
-                          #                       '--with-sysroot=$ALPHA_OS_ROOT',
-                          #                       '--target=x86_64-pc-linux',
-                          #                       '--disable-nls',
-                          #                       '--enable-gprofng=no',
-                          #                       '--disable-werror',
-                          #                       '--enable-new-dtags',
-                          #                       '--enable-default-hash-style=gnu']),
-                          # CompilePackageTask(),
-                          # InstallPackageTask(),
-                          # ChangeCurrentDirectoryTask('$ALPHA_BOOTSTRAP'),
+                          SedTask('-e \'/m64=/s/lib64/lib/\' -i.orig',
+                                  'gcc/config/i386/t-linux64',
+                                  'use \'/lib\' in place of \'/lib64\''),
+                          CreateDirectoryTask('build', False),
+                          ChangeCurrentDirectoryTask('build'),
+                          ConfigurePackageTask(['--target=$ALPHA_OS_TARGET',
+                                                '--prefix=$ALPHA_TOOLS',
+                                                '--with-glibc-version=2.41',
+                                                '--with-sysroot=$ALPHA_OS_ROOT',
+                                                '--with-newlib',
+                                                '--without-headers',
+                                                '--enable-default-pie',
+                                                '--enable-default-ssp',
+                                                '--disable-werror',
+                                                '--disable-nls',
+                                                '--disable-shared',
+                                                '--disable-multilib',
+                                                '--disable-threads',
+                                                '--disable-libatomic',
+                                                '--disable-libgomp',
+                                                '--disable-libquadmath',
+                                                '--disable-libssp',
+                                                '--disable-libvtv',
+                                                '--disable-libstdcxx',
+                                                '--enable-languages=c,c++']),
+                          CompilePackageTask(),
+                          InstallPackageTask(),
+                          ChangeCurrentDirectoryTask('..'),
+                          GenerateLimitsHeaderTask(),
+                          ChangeCurrentDirectoryTask('$ALPHA_BOOTSTRAP')
+                          ])
+
+class GenerateLimitsHeaderTask(Task):
+    def __init__(self):
+        super().__init__('GenerateLimitsHeader')
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd(f'cat gcc/limitx.h gcc/glimits.h gcc/limity.h > ' +
+                                          '`dirname $($ALPHA_OS_TARGET-gcc -print-libgcc-file-name)`/include/limits.h')
+        if not success:
+            out = (OutputEntry() << red_text("Failed to generate ") << cyan_text('\'limits.h\'') <<
+                   red_text(' header') <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        out = OutputEntry() << "Generated " << cyan_text('\'limits.h\'') << ' header'
+        return (True, out)
+
+class InstallAPIHeadersTask(ChainTask):
+    def __init__(self):
+        kernel_elem = yellow_text('API headers')
+        kernel_url = 'https://www.kernel.org/pub/linux/kernel/v6.x/linux-6.14.6.tar.xz'
+        kernel_filename = 'linux-6.14.6.tar.xz'
+        kernel_dir = 'linux-6.14.6'
+        super().__init__('InstallAPIHeaders',
+                         OutputEntry() << 'Installing ' << kernel_elem,
+                         OutputEntry() << 'Finished installing ' << kernel_elem,
+                         OutputEntry() << red_text('Failed installing ') << kernel_elem,
+                         [DownloadFileTask(kernel_url, kernel_filename),
+                          UnpackArchiveTask(kernel_filename),
+                          ChangeCurrentDirectoryTask(kernel_dir),
+                          InstallKernelHeadersTask(),
+                          ChangeCurrentDirectoryTask('$ALPHA_BOOTSTRAP'),
+                          ])
+
+class InstallKernelHeadersTask(Task):
+    def __init__(self):
+        super().__init__('InstallKernelHeaders')
+
+    def start_message(self):
+        return OutputEntry() << 'Installing kernel headers'
+
+    def end_message(self):
+        if self.successful():
+            return OutputEntry() << 'Completed installing kernel headers'
+        return None
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd('make mrproper')
+        if success:
+            (success, _, err) = run_shell_cmd('make headers')
+        if success:
+            (success, _, err) = run_shell_cmd('find usr/include -type f ! -name \'*.h\' -delete')
+        if success:
+            (success, _, err) = run_shell_cmd('cp -rv usr/include $ALPHA_OS_ROOT/usr')
+        if not success:
+            out = (OutputEntry() << red_text("Failed to install kernel headers ") <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        return (True, None)
+
+class InstallGlibcTask(ChainTask):
+    def __init__(self):
+        glibc_elem = yellow_text('Glibc')
+        glibc_url = 'https://ftp.gnu.org/gnu/glibc/glibc-2.41.tar.xz'
+        glibc_filename = 'glibc-2.41.tar.xz'
+        glibc_dir = 'glibc-2.41'
+        glibc_fhs_patch_url = 'https://www.linuxfromscratch.org/patches/lfs/development/glibc-2.41-fhs-1.patch'
+        glibc_fhs_patch_filename = 'glibc-2.41-fhs-1.patch'
+        super().__init__('InstallGlibc',
+                         OutputEntry() << 'Installing ' << glibc_elem,
+                         OutputEntry() << 'Finished installing ' << glibc_elem,
+                         OutputEntry() << red_text('Failed installing ') << glibc_elem,
+                         [DownloadFileTask(glibc_url, glibc_filename),
+                          UnpackArchiveTask(glibc_filename),
+                          ChangeCurrentDirectoryTask(glibc_dir),
+                          DownloadFileTask(glibc_fhs_patch_url, glibc_fhs_patch_filename),
+                          CreateSymlinkTask('ld-linux.so.2', '$ALPHA_OS_ROOT/lib/ld-lsb.so.3'),
+                          CreateSymlinkTask('../lib/ld-linux-x86-64.so.2', '$ALPHA_OS_ROOT/lib64'),
+                          CreateSymlinkTask('../lib/ld-linux-x86-64.so.2', '$ALPHA_OS_ROOT/lib64/ld-lsb-x86-64.so.3'),
+                          ApplyPatchTask('-Np1', glibc_fhs_patch_filename),
+                          CreateDirectoryTask('build', False),
+                          ChangeCurrentDirectoryTask('build'),
+                          ShellTask('GlibcConfigParams',
+                                    'echo "rootsbindir=/usr/sbin" > configparms',
+                                    'Forced the use of /usr/sbin directory',
+                                    red_text('Failed to force the use of /usr/sbin directory')),
+                          ConfigurePackageTask(['--prefix=/usr',
+                                                '--host=$ALPHA_OS_TARGET',
+                                                '--build=$(../scripts/config.guess)',
+                                                '--enable-kernel=5.4',
+                                                '--disable-nscd',
+                                                'libc_cv_slibdir=/usr/lib']),
+                          CompilePackageTask(),
+                          InstallPackageTask('$ALPHA_OS_ROOT'),
+                          SedTask('\'/RTLDLIST=/s@/usr@@g\' -i ',
+                                  '$ALPHA_OS_ROOT/usr/bin/ldd',
+                                  'fix hard-coded path to the exectuable loader in ldd script'),
+                          ChangeCurrentDirectoryTask('$ALPHA_BOOTSTRAP'),
+                          ])
+
+class InstallLibstdcppTask(ChainTask):
+    def __init__(self):
+        libstdcpp_dir = 'gcc-14.2.0/libstdc++-v3'
+        libstdcpp_elem = yellow_text('Libstdcpp')
+        super().__init__('InstallLibstdcpp',
+                         OutputEntry() << 'Installing ' << libstdcpp_elem,
+                         OutputEntry() << 'Finished installing ' << libstdcpp_elem,
+                         OutputEntry() << red_text('Failed installing ') << libstdcpp_elem,
+                         [ChangeCurrentDirectoryTask(libstdcpp_dir),
+                          CreateDirectoryTask('build', False),
+                          ChangeCurrentDirectoryTask('build'),
+                          ConfigurePackageTask(['--host=$ALPHA_OS_TARGET',
+                                                '--build=$(../config.guess)',
+                                                '--prefix=/usr',
+                                                '--disable-multilib',
+                                                '--disable-nls',
+                                                '--disable-libstdcxx-pch',
+                                                '--with-gxx-include-dir=/tools/$ALPHA_OS_TARGET/include/c++/14.2.0']),
+                          CompilePackageTask(),
+                          InstallPackageTask('$ALPHA_OS_ROOT'),
+                          RemoveFileTask('$ALPHA_OS_ROOT/usr/lib/lib{stdc++{,exp,fs},supc++}.la'),
+                          ChangeCurrentDirectoryTask('$ALPHA_BOOTSTRAP'),
                           ])

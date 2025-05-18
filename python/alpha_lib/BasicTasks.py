@@ -4,6 +4,23 @@ import urllib.request
 from alpha_lib.Output import *
 from alpha_lib.Task import *
 
+class ShellTask(Task):
+    def __init__(self, name, cmd, success_msg, fail_msg):
+        super().__init__(name)
+        self.name = name
+        self.cmd = cmd
+        self.success_msg = success_msg
+        self.fail_msg = fail_msg
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd(self.cmd)
+        if not success:
+            out = (OutputEntry() << self.fail_msg <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        out = OutputEntry() << self.success_msg
+        return (True, out)
+
 class ChainTask(Task):
     def __init__(self, name, prologue, epilogue, error_msg, children):
         super().__init__(name)
@@ -155,6 +172,87 @@ class MoveFileTask(Task):
         out = OutputEntry() << "Moved file " << cyan_text(self.curpath) << ' to ' << cyan_text(self.newpath)
         return (True, out)
 
+class RemoveFileTask(Task):
+    def __init__(self, filepath):
+        super().__init__('RemoveFile')
+        self.filepath = filepath
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd(f'rv {self.filepath}')
+        if not success:
+            out = (OutputEntry() << red_text("Failed to remove file ") << cyan_text(self.filepath) <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        out = OutputEntry() << "Removed file " << cyan_text(self.filepath)
+        return (True, out)
+
+class CreateSymlinkTask(Task):
+    def __init__(self, target, name):
+        super().__init__('CreateSimlink')
+        self.target = target
+        self.name = name
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd(f'ln -sf {self.target} {self.name}')
+        if not success:
+            out = (OutputEntry() << red_text("Failed to create symbolink link ") << cyan_text(self.name) <<
+                   red_text(' to target ') << cyan_text(self.target) <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        out = OutputEntry() << "Created symbolic link " << cyan_text(self.name) << ' to target ' << cyan_text(self.target)
+        return (True, out)
+
+class ApplyPatchTask(Task):
+    def __init__(self, params, filename):
+        super().__init__('ApplyPatch')
+        self.params = params
+        self.filename = filename
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd(f'patch {self.params} -i {self.filename}')
+        if not success:
+            out = (OutputEntry() << red_text("Failed to apply patch ") << cyan_text(self.filename) <<
+                   newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
+            return (False, out)
+        out = OutputEntry() << "Applied patch " << cyan_text(self.filename)
+        return (True, out)
+
+class SetUmaskTask(Task):
+    def __init__(self, umask):
+        super().__init__('SetUmask')
+        self.umask = umask
+
+    def _run(self):
+        os.umask(self.umask)
+        out = OutputEntry() << "Set umask to " << cyan_text(oct(self.umask))
+        return (True, out)
+
+class SedTask(Task):
+    def __init__(self, cmds, filepath, msg=None):
+        super().__init__('Sed')
+        self.cmds = cmds
+        self.filepath = filepath
+        self.msg = msg
+
+    def _run(self):
+        (success, _, err) = run_shell_cmd(f'sed {self.cmds} {self.filepath}')
+        if not success:
+            out = (OutputEntry() << red_text("Failed to modify file ") << cyan_text(self.filepath) << red_text(' with ') <<
+                   yellow_text('sed'))
+            if self.msg is None:
+                out << red_text(' through commands ') << cyan_text(self.cmds)
+            else:
+                out << red_text(' to ') << cyan_text(self.msg)
+            out << newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8'))
+            return (False, out)
+        out = OutputEntry() << "Modified file " << cyan_text(self.filepath) << ' with ' << yellow_text('sed')
+        if self.msg is None:
+            out << ' through commands ' << cyan_text(self.cmds)
+        else:
+            out << ' to ' << cyan_text(self.msg)
+        return (True, out)
+
+
 class DownloadFileTask(Task):
     def __init__(self, url, filename):
         super().__init__('DownloadFile')
@@ -272,7 +370,7 @@ class CompilePackageTask(Task):
         return None
 
     def _run(self):
-        (success, _, err) = run_shell_cmd('make')
+        (success, _, err) = run_shell_cmd('make -j4')
         if not success:
             out = (OutputEntry() << red_text("Failed to compile package ") <<
                    newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
@@ -280,19 +378,29 @@ class CompilePackageTask(Task):
         return (True, None)
 
 class InstallPackageTask(Task):
-    def __init__(self):
+    def __init__(self, destdir=None):
         super().__init__('InstallPackage')
+        self.destdir = destdir
 
     def start_message(self):
-        return OutputEntry() << 'Installing package'
+        if self.destdir is not None:
+            return OutputEntry() << 'Installing package in directory ' << cyan_text(self.destdir)
+        else:
+            return OutputEntry() << 'Installing package'
 
     def end_message(self):
         if self.successful():
-            return OutputEntry() << 'Completed package installation'
+            if self.destdir is not None:
+                return OutputEntry() << 'Completed package installation in directory' << cyan_text(self.destdir)
+            else:
+                return OutputEntry() << 'Completed package installation'
         return None
 
     def _run(self):
-        (success, _, err) = run_shell_cmd('make install')
+        if self.destdir is not None:
+            (success, _, err) = run_shell_cmd(f'make DESTDIR={self.destdir} install')
+        else:
+            (success, _, err) = run_shell_cmd('make install')
         if not success:
             out = (OutputEntry() << red_text("Failed to install package ") <<
                    newline() << red_text('Reason: ') << newline() << yellow_text(err.decode('utf-8')))
